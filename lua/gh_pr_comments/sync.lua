@@ -95,14 +95,6 @@ local function sync_new_comment(repo, number, edited, opts)
     return "created", nil
   end
 
-  if edited.meta.kind == "new_review" then
-    local _, err = gh.create_review(repo, number, {
-      body = edited.body,
-      event = edited.meta.state,
-    }, opts)
-    return err
-  end
-
   if edited.meta.kind == "new_review_comment" then
     local parsed_target, target_err = target.parse_blob_url(edited.meta.target)
     if target_err then

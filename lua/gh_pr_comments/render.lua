@@ -30,14 +30,16 @@ local function append_fenced_body(lines, body)
 end
 
 local function render_comment_label(comment)
-  local kind_label = comment.kind == "review" and "review" or "comment"
-  local id_label = string.format("%s#%s", kind_label, comment.id)
+  local is_review = comment.kind == "review"
+  local has_id = comment.id ~= nil
+  local kind_label = is_review and "review" or "comment"
+  local id_label = has_id and string.format(" %s#%s", kind_label, comment.id) or ""
 
-  if comment.kind == "review" then
-    return string.format("@%s %s [%s]", comment.author, id_label, comment.state)
+  if is_review then
+    return string.format("@%s%s [%s]", comment.author, id_label, comment.state)
   end
 
-  return string.format("@%s %s", comment.author, id_label)
+  return string.format("@%s%s", comment.author, id_label)
 end
 
 function M.render(doc)

@@ -36,12 +36,24 @@ local function on_write(bufnr)
   end
 
   notify(string.format("saving comments for #%d", original_doc.meta.number))
-  local refreshed, sync_err = sync.apply(edited_doc, original_doc, {
+  local refreshed, sync_err, report = sync.apply(edited_doc, original_doc, {
     cwd = vim.loop.cwd(),
   })
   if sync_err then
     notify("sync error: " .. sync_err, vim.log.levels.ERROR)
     return
+  end
+
+  for _, item in ipairs(report.updated or {}) do
+    notify(string.format("updated %s %s", item.scope, tostring(item.id)))
+  end
+
+  for _, item in ipairs(report.skipped or {}) do
+    notify(string.format("skipped %s %s: %s", item.scope, tostring(item.id), item.reason), vim.log.levels.WARN)
+  end
+
+  for _, item in ipairs(report.errored or {}) do
+    notify(string.format("error %s %s: %s", item.scope, tostring(item.id), item.message), vim.log.levels.ERROR)
   end
 
   render_into_buffer(bufnr, refreshed)

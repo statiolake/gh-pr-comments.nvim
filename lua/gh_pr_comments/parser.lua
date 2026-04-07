@@ -2,14 +2,24 @@ local util = require("gh_pr_comments.util")
 
 local M = {}
 local validate_comment
+local function strip_fold_markers(line)
+  if type(line) ~= "string" then
+    return line
+  end
+
+  local stripped = line
+  stripped = stripped:gsub("%s*<!%-%- %{%{%{ %-%->$", "")
+  stripped = stripped:gsub("%s*<!%-%- %}%}%} %-%->$", "")
+  return stripped
+end
 
 local function consume_fenced_body(lines, start_index, meta_lnum)
   local index = start_index
-  while index <= #lines and lines[index] == "" do
+  while index <= #lines and strip_fold_markers(lines[index]) == "" do
     index = index + 1
   end
 
-  local opening = lines[index]
+  local opening = strip_fold_markers(lines[index])
   if not opening then
     return nil, nil, string.format("line %d: missing fenced body after metadata", meta_lnum)
   end
@@ -23,11 +33,12 @@ local function consume_fenced_body(lines, start_index, meta_lnum)
   index = index + 1
 
   while index <= #lines do
-    if lines[index] == fence then
+    local current = strip_fold_markers(lines[index])
+    if current == fence then
       return util.join_lines(body), index + 1, nil
     end
 
-    table.insert(body, lines[index])
+    table.insert(body, current)
     index = index + 1
   end
 
@@ -39,12 +50,15 @@ local function consume_plain_body(lines, start_index, is_boundary)
   local body = {}
 
   while index <= #lines do
-    if is_boundary(lines[index], index) then
+    local current = strip_fold_markers(lines[index])
+    if current == "" then
+      index = index + 1
+    elseif is_boundary(current, index) then
       break
+    else
+      table.insert(body, current)
+      index = index + 1
     end
-
-    table.insert(body, lines[index])
-    index = index + 1
   end
 
   while #body > 0 and body[1] == "" do
@@ -60,11 +74,11 @@ end
 
 local function consume_body(lines, start_index, meta_lnum, is_boundary)
   local index = start_index
-  while index <= #lines and lines[index] == "" do
+  while index <= #lines and strip_fold_markers(lines[index]) == "" do
     index = index + 1
   end
 
-  local opening = lines[index]
+  local opening = strip_fold_markers(lines[index])
   if not opening then
     return "", index, nil
   end
@@ -217,7 +231,7 @@ local function parse_review_thread_entry(lines, start_index, thread_context, thr
   end
 
   local body, after_body, body_err = consume_body(lines, index, start_index, function(line)
-    return line == "---" or line:match("^### https://github%.com/.+$")
+    return line == "---" or parse_review_thread_heading(line) ~= nil
   end)
   if body_err then
     return nil, nil, body_err
@@ -284,7 +298,7 @@ function M.parse(lines)
   local current_thread_root_id
 
   while index <= #lines do
-    local line = lines[index]
+    local line = strip_fold_markers(lines[index])
     if index == 1 and line:match("^# ") then
       index = index + 1
     elseif index == 3 and type(line) == "string" then

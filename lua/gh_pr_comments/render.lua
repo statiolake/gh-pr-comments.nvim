@@ -1,6 +1,9 @@
 local util = require("gh_pr_comments.util")
 
 local M = {}
+local LONG_COMMENT_FOLD_THRESHOLD = 10
+local FOLD_START = " <!-- {{{ -->"
+local FOLD_END = " <!-- }}} -->"
 
 local function add_block(lines, block_lines)
   if #lines > 0 and lines[#lines] ~= "" then
@@ -29,6 +32,12 @@ local function append_fenced_body(lines, body)
   table.insert(lines, fence)
 end
 
+local function should_fold_long_comment(body)
+  local normalized = util.normalize_newlines(body)
+  local body_lines = util.split_lines(normalized)
+  return #body_lines >= LONG_COMMENT_FOLD_THRESHOLD
+end
+
 local function render_comment_label(comment)
   local is_review = comment.kind == "review"
   local has_id = comment.id ~= nil
@@ -40,6 +49,22 @@ local function render_comment_label(comment)
   end
 
   return string.format("@%s%s", comment.author, id_label)
+end
+
+local function build_comment_block(comment)
+  local block = {
+    render_comment_label(comment),
+    "",
+  }
+
+  append_fenced_body(block, comment.body)
+
+  if should_fold_long_comment(comment.body) then
+    block[1] = block[1] .. FOLD_START
+    block[#block] = block[#block] .. FOLD_END
+  end
+
+  return block
 end
 
 function M.render(doc)
@@ -66,14 +91,7 @@ function M.render(doc)
       add_separator(lines)
     end
 
-    local block = {
-      render_comment_label(comment),
-      "",
-    }
-
-    append_fenced_body(block, comment.body)
-
-    add_block(lines, block)
+    add_block(lines, build_comment_block(comment))
   end
 
   if doc.meta.kind == "pull_request" then
@@ -101,9 +119,13 @@ function M.render(doc)
           table.insert(block, "")
         end
 
-        table.insert(block, render_comment_label(comment))
-        table.insert(block, "")
-        append_fenced_body(block, comment.body)
+        vim.list_extend(block, build_comment_block(comment))
+      end
+
+      local last_comment = thread.comments[#thread.comments]
+      if last_comment and last_comment.author == doc.meta.current_user then
+        block[1] = block[1] .. FOLD_START
+        block[#block] = block[#block] .. FOLD_END
       end
 
       add_block(lines, block)

@@ -60,6 +60,7 @@ The rendered document uses this structure:
 - `## Description`: issue or pull request body
 - `## Comments`: top-level timeline comments
 - `## Reviews`: file/line review threads
+- Rendered review thread headings use `path:line` so they work well with `gf`.
 
 Bodies may be written either as plain text or as fenced blocks. After a successful save, the buffer is re-rendered into the canonical fenced form.
 
@@ -89,7 +90,7 @@ New top-level comment
 
 ## Reviews
 
-### https://github.com/owner/repo/blob/commit/path/to/file.ts#L10
+### path/to/file.ts:10
 
 @reviewer comment#456
 ```comment

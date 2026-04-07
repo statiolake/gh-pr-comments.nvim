@@ -119,6 +119,31 @@ local function parse_identity_line(line)
   return nil
 end
 
+local function parse_review_thread_heading(line)
+  if type(line) ~= "string" then
+    return nil
+  end
+
+  local url = line:match("^### (https://github%.com/.+)$")
+  if url then
+    return {
+      mode = "url",
+      value = url,
+    }
+  end
+
+  local path, line_number = line:match("^### (.+):(%d+)$")
+  if path and line_number then
+    return {
+      mode = "location",
+      path = path,
+      line = tonumber(line_number),
+    }
+  end
+
+  return nil
+end
+
 local function parse_timeline_entry(lines, start_index)
   local index = start_index
   local identity = parse_identity_line(lines[index])
@@ -159,7 +184,7 @@ local function parse_timeline_entry(lines, start_index)
   return comment, after_body, nil
 end
 
-local function parse_review_thread_entry(lines, start_index, thread_target, thread_root_id)
+local function parse_review_thread_entry(lines, start_index, thread_context, thread_root_id)
   local index = start_index
   local identity = parse_identity_line(lines[index])
   if identity then
@@ -179,9 +204,13 @@ local function parse_review_thread_entry(lines, start_index, thread_target, thre
         in_reply_to_id = thread_root_id,
       }
     else
+      if not thread_context or thread_context.mode ~= "url" then
+        return nil, nil, string.format("line %d: new review thread requires a GitHub blob URL heading", start_index)
+      end
+
       meta = {
         kind = "new_review_comment",
-        target = thread_target,
+        target = thread_context.value,
         side = "RIGHT",
       }
     end
@@ -251,7 +280,7 @@ function M.parse(lines)
   local body
   local index = 1
   local section
-  local current_thread_target
+  local current_thread_context
   local current_thread_root_id
 
   while index <= #lines do
@@ -262,12 +291,12 @@ function M.parse(lines)
       index = index + 1
     elseif line == "## Comments" then
       section = "comments"
-      current_thread_target = nil
+      current_thread_context = nil
       current_thread_root_id = nil
       index = index + 1
     elseif line == "## Reviews" then
       section = "reviews"
-      current_thread_target = nil
+      current_thread_context = nil
       current_thread_root_id = nil
       index = index + 1
     elseif line == "## Description" then
@@ -288,12 +317,12 @@ function M.parse(lines)
       end
       table.insert(comments, comment)
       index = next_index
-    elseif section == "reviews" and line:match("^### https://github%.com/.+") then
-      current_thread_target = line:match("^### (https://github%.com/.+)$")
+    elseif section == "reviews" and parse_review_thread_heading(line) then
+      current_thread_context = parse_review_thread_heading(line)
       current_thread_root_id = nil
       index = index + 1
-    elseif section == "reviews" and current_thread_target then
-      local comment, next_index, comment_err = parse_review_thread_entry(lines, index, current_thread_target, current_thread_root_id)
+    elseif section == "reviews" and current_thread_context then
+      local comment, next_index, comment_err = parse_review_thread_entry(lines, index, current_thread_context, current_thread_root_id)
       if comment_err then
         return nil, comment_err
       end

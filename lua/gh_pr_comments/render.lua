@@ -87,8 +87,9 @@ function M.render(doc)
 
     for _, thread in ipairs(review_threads) do
       local first = thread.comments[1]
+      local location = string.format("%s:%s", first.path or "unknown", tostring(first.line or "?"))
       local block = {
-        string.format("### %s", first.target or "review thread"),
+        string.format("### %s", location),
       }
 
       for index, comment in ipairs(thread.comments) do

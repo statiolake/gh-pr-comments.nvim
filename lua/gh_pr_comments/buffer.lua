@@ -22,6 +22,37 @@ local function buffer_name(doc)
   return string.format("gh-comment://%s/%d", doc.meta.kind, doc.meta.number)
 end
 
+local function buffer_name_for(kind, number)
+  return string.format("gh-comment://%s/%d", kind, number)
+end
+
+local function find_existing_buffer(number)
+  local candidates = {
+    buffer_name_for("pull_request", number),
+    buffer_name_for("issue", number),
+  }
+
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      local name = vim.api.nvim_buf_get_name(bufnr)
+      for _, candidate in ipairs(candidates) do
+        if name == candidate then
+          return bufnr
+        end
+      end
+    end
+  end
+
+  return nil
+end
+
+local function load_doc(opts)
+  return model.load({
+    number = opts.number,
+    cwd = vim.loop.cwd(),
+  })
+end
+
 local function on_write(bufnr)
   local original_doc = vim.b[bufnr].gh_pr_comments_doc
   if not original_doc then
@@ -62,10 +93,21 @@ end
 
 function M.open(opts)
   notify(opts.number and string.format("loading comments for #%d", opts.number) or "loading current pull request comments")
-  local doc, err = model.load({
-    number = opts.number,
-    cwd = vim.loop.cwd(),
-  })
+  if opts.number then
+    local existing = find_existing_buffer(opts.number)
+    if existing then
+      vim.api.nvim_set_current_buf(existing)
+      local existing_doc = vim.b[existing].gh_pr_comments_doc
+      if existing_doc then
+        notify(string.format("activated existing comments buffer for %s #%d", existing_doc.meta.kind == "pull_request" and "PR" or "issue", existing_doc.meta.number))
+      else
+        notify(string.format("activated existing comments buffer for #%d", opts.number))
+      end
+      return
+    end
+  end
+
+  local doc, err = load_doc(opts)
   if err then
     notify(err, vim.log.levels.ERROR)
     return

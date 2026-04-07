@@ -54,13 +54,16 @@ function M.render(doc)
   append_fenced_body(lines, doc.body)
 
   table.insert(lines, "")
-  table.insert(lines, "# Comments")
+  table.insert(lines, "## Comments")
 
-  for index, comment in ipairs(doc.timeline_items or {}) do
+  local timeline_items = doc.timeline_items or {}
+  if #timeline_items > 0 then
+    table.insert(lines, "")
+  end
+
+  for index, comment in ipairs(timeline_items) do
     if index > 1 then
       add_separator(lines)
-    else
-      table.insert(lines, "")
     end
 
     local block = {
@@ -73,25 +76,19 @@ function M.render(doc)
     add_block(lines, block)
   end
 
-  add_separator(lines)
-  local new_issue_block = {}
-  append_fenced_body(new_issue_block, "")
-  add_block(lines, new_issue_block)
-
   if doc.meta.kind == "pull_request" then
     table.insert(lines, "")
-    table.insert(lines, "# Reviews")
+    table.insert(lines, "## Reviews")
 
-    for thread_index, thread in ipairs(doc.review_threads or {}) do
-      if thread_index > 1 then
-        add_separator(lines)
-      else
-        table.insert(lines, "")
-      end
+    local review_threads = doc.review_threads or {}
+    if #review_threads > 0 then
+      table.insert(lines, "")
+    end
 
+    for _, thread in ipairs(review_threads) do
       local first = thread.comments[1]
       local block = {
-        string.format("## %s", first.target or "review thread"),
+        string.format("### %s", first.target or "review thread"),
       }
 
       for index, comment in ipairs(thread.comments) do
@@ -103,8 +100,6 @@ function M.render(doc)
           table.insert(block, "")
         end
 
-        table.insert(block, string.format("@%s", comment.author))
-        table.remove(block, #block)
         table.insert(block, render_comment_label(comment))
         table.insert(block, "")
         append_fenced_body(block, comment.body)
@@ -112,13 +107,6 @@ function M.render(doc)
 
       add_block(lines, block)
     end
-
-    add_separator(lines)
-    local new_comment_block = {
-      "## https://github.com/OWNER/REPO/blob/COMMIT/PATH/TO/FILE#L1",
-    }
-    append_fenced_body(new_comment_block, "")
-    add_block(lines, new_comment_block)
   end
 
   return lines

@@ -34,6 +34,48 @@ local function consume_fenced_body(lines, start_index, meta_lnum)
   return nil, nil, string.format("line %d: unterminated fenced body", meta_lnum)
 end
 
+local function consume_plain_body(lines, start_index, is_boundary)
+  local index = start_index
+  local body = {}
+
+  while index <= #lines do
+    if is_boundary(lines[index], index) then
+      break
+    end
+
+    table.insert(body, lines[index])
+    index = index + 1
+  end
+
+  while #body > 0 and body[1] == "" do
+    table.remove(body, 1)
+  end
+
+  while #body > 0 and body[#body] == "" do
+    table.remove(body, #body)
+  end
+
+  return util.join_lines(body), index, nil
+end
+
+local function consume_body(lines, start_index, meta_lnum, is_boundary)
+  local index = start_index
+  while index <= #lines and lines[index] == "" do
+    index = index + 1
+  end
+
+  local opening = lines[index]
+  if not opening then
+    return "", index, nil
+  end
+
+  if opening:match("^```+") then
+    return consume_fenced_body(lines, index, meta_lnum)
+  end
+
+  return consume_plain_body(lines, index, is_boundary)
+end
+
 local function next_nonblank_line(lines, start_index)
   local index = start_index
   while index <= #lines and lines[index] == "" do
@@ -102,7 +144,9 @@ local function parse_timeline_entry(lines, start_index)
     meta = { kind = "new_issue_comment" }
   end
 
-  local body, after_body, body_err = consume_fenced_body(lines, index, start_index)
+  local body, after_body, body_err = consume_body(lines, index, start_index, function(line)
+    return line == "---" or line == "## Reviews"
+  end)
   if body_err then
     return nil, nil, body_err
   end
@@ -143,7 +187,9 @@ local function parse_review_thread_entry(lines, start_index, thread_target, thre
     end
   end
 
-  local body, after_body, body_err = consume_fenced_body(lines, index, start_index)
+  local body, after_body, body_err = consume_body(lines, index, start_index, function(line)
+    return line == "---" or line:match("^### https://github%.com/.+$")
+  end)
   if body_err then
     return nil, nil, body_err
   end
@@ -210,18 +256,24 @@ function M.parse(lines)
 
   while index <= #lines do
     local line = lines[index]
-    if line == "# Comments" then
+    if index == 1 and line:match("^# ") then
+      index = index + 1
+    elseif index == 3 and type(line) == "string" then
+      index = index + 1
+    elseif line == "## Comments" then
       section = "comments"
       current_thread_target = nil
       current_thread_root_id = nil
       index = index + 1
-    elseif line == "# Reviews" then
+    elseif line == "## Reviews" then
       section = "reviews"
       current_thread_target = nil
       current_thread_root_id = nil
       index = index + 1
     elseif line == "## Description" then
-      local parsed_body, next_index, body_err = consume_fenced_body(lines, index + 1, index)
+      local parsed_body, next_index, body_err = consume_body(lines, index + 1, index, function(boundary_line)
+        return boundary_line == "## Comments" or boundary_line == "## Reviews"
+      end)
       if body_err then
         return nil, body_err
       end
@@ -229,18 +281,18 @@ function M.parse(lines)
       index = next_index
     elseif line == "---" or line == "" then
       index = index + 1
-    elseif section == "comments" and (line:match("^@") or line:match("^```+")) then
+    elseif section == "comments" then
       local comment, next_index, comment_err = parse_timeline_entry(lines, index)
       if comment_err then
         return nil, comment_err
       end
       table.insert(comments, comment)
       index = next_index
-    elseif section == "reviews" and line:match("^## https://github%.com/.+") then
-      current_thread_target = line:match("^## (https://github%.com/.+)$")
+    elseif section == "reviews" and line:match("^### https://github%.com/.+") then
+      current_thread_target = line:match("^### (https://github%.com/.+)$")
       current_thread_root_id = nil
       index = index + 1
-    elseif section == "reviews" and current_thread_target and (line:match("^@") or line:match("^```+")) then
+    elseif section == "reviews" and current_thread_target then
       local comment, next_index, comment_err = parse_review_thread_entry(lines, index, current_thread_target, current_thread_root_id)
       if comment_err then
         return nil, comment_err
@@ -250,8 +302,14 @@ function M.parse(lines)
         current_thread_root_id = comment.meta.id
       end
       index = next_index
+    elseif section == nil then
+      return nil, string.format("line %d: unexpected content outside any section: %s", index, line)
+    elseif section == "comments" then
+      return nil, string.format("line %d: unexpected content in Comments section: %s", index, line)
+    elseif section == "reviews" then
+      return nil, string.format("line %d: unexpected content in Reviews section: %s", index, line)
     else
-      index = index + 1
+      return nil, string.format("line %d: unexpected content: %s", index, line)
     end
   end
 

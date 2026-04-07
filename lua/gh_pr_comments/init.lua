@@ -7,6 +7,10 @@ function M.open(opts)
   buffer.open(opts or {})
 end
 
+function M.reload(opts)
+  buffer.reload_current(opts or {})
+end
+
 function M.review_comment_qf_items(opts)
   return qf.review_comment_items(opts or {})
 end

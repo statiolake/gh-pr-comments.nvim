@@ -11,3 +11,12 @@ vim.api.nvim_create_user_command("GhComment", function(opts)
 end, {
   nargs = "?",
 })
+
+vim.api.nvim_create_user_command("GhCommentReload", function(opts)
+  require("gh_pr_comments").reload({
+    force = opts.bang,
+  })
+end, {
+  bang = true,
+  nargs = 0,
+})

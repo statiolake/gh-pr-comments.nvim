@@ -53,6 +53,29 @@ local function load_doc(opts)
   })
 end
 
+local function reload_buffer(bufnr, opts)
+  local original_doc = vim.b[bufnr].gh_pr_comments_doc
+  if not original_doc then
+    notify("missing original document state", vim.log.levels.ERROR)
+    return nil
+  end
+
+  local doc, err = load_doc({
+    number = original_doc.meta.number,
+  })
+  if err then
+    notify(err, vim.log.levels.ERROR)
+    return nil
+  end
+
+  if vim.api.nvim_buf_get_name(bufnr) ~= buffer_name(doc) then
+    vim.api.nvim_buf_set_name(bufnr, buffer_name(doc))
+  end
+
+  render_into_buffer(bufnr, doc)
+  return doc
+end
+
 local function on_write(bufnr)
   local original_doc = vim.b[bufnr].gh_pr_comments_doc
   if not original_doc then
@@ -130,6 +153,28 @@ function M.open(opts)
   render_into_buffer(bufnr, doc)
   vim.api.nvim_set_current_buf(bufnr)
   notify(string.format("loaded comments for %s #%d", doc.meta.kind == "pull_request" and "PR" or "issue", doc.meta.number))
+end
+
+function M.reload_current(opts)
+  local bufnr = vim.api.nvim_get_current_buf()
+  local original_doc = vim.b[bufnr].gh_pr_comments_doc
+  if not original_doc then
+    notify("current buffer is not a gh-pr-comments buffer", vim.log.levels.ERROR)
+    return
+  end
+
+  if vim.bo[bufnr].modified and not opts.force then
+    notify("buffer has unsaved changes; use :GhCommentReload! to discard them", vim.log.levels.ERROR)
+    return
+  end
+
+  notify(string.format("reloading comments for #%d", original_doc.meta.number))
+  local doc = reload_buffer(bufnr, {})
+  if not doc then
+    return
+  end
+
+  notify(string.format("reloaded comments for %s #%d", doc.meta.kind == "pull_request" and "PR" or "issue", doc.meta.number))
 end
 
 return M

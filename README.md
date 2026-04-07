@@ -25,7 +25,7 @@ With `lazy.nvim`:
 ```lua
 require("lazy").setup({
   {
-    "OWNER/REPO",
+    "statiolake/gh-pr-comments.nvim",
   },
 })
 ```

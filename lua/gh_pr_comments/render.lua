@@ -1,9 +1,12 @@
 local util = require("gh_pr_comments.util")
 
 local M = {}
-local LONG_COMMENT_FOLD_THRESHOLD = 10
+local LONG_COMMENT_FOLD_THRESHOLD = 5
+local LONG_COMMENT_VISIBLE_LINES = 3
 local FOLD_START = " <!-- {{{ -->"
 local FOLD_END = " <!-- }}} -->"
+local MORE_FOLD_START = "<!-- More... {{{ -->"
+local MORE_FOLD_END = "<!-- }}} -->"
 
 local function add_block(lines, block_lines)
   if #lines > 0 and lines[#lines] ~= "" then
@@ -24,7 +27,7 @@ end
 local function append_fenced_body(lines, body)
   local normalized = util.normalize_newlines(body)
   local fence = string.rep("`", math.max(3, util.max_backtick_run(normalized) + 1))
-  table.insert(lines, fence .. "comment")
+  table.insert(lines, fence)
 
   local body_lines = util.split_lines(normalized)
   vim.list_extend(lines, body_lines)
@@ -32,10 +35,12 @@ local function append_fenced_body(lines, body)
   table.insert(lines, fence)
 end
 
-local function should_fold_long_comment(body)
-  local normalized = util.normalize_newlines(body)
-  local body_lines = util.split_lines(normalized)
-  return #body_lines >= LONG_COMMENT_FOLD_THRESHOLD
+local function append_marker(line, marker)
+  if line:sub(-#marker) == marker then
+    return line
+  end
+
+  return line .. marker
 end
 
 local function render_comment_label(comment)
@@ -51,7 +56,8 @@ local function render_comment_label(comment)
   return string.format("@%s%s", comment.author, id_label)
 end
 
-local function build_comment_block(comment)
+local function build_comment_block(comment, opts)
+  opts = opts or {}
   local block = {
     render_comment_label(comment),
     "",
@@ -59,9 +65,13 @@ local function build_comment_block(comment)
 
   append_fenced_body(block, comment.body)
 
-  if should_fold_long_comment(comment.body) then
-    block[1] = block[1] .. FOLD_START
-    block[#block] = block[#block] .. FOLD_END
+  if opts.long_fold ~= false then
+    local body_lines = util.split_lines(util.normalize_newlines(comment.body))
+    if #body_lines >= LONG_COMMENT_FOLD_THRESHOLD then
+      local fold_start_index = 3 + LONG_COMMENT_VISIBLE_LINES + 1
+      table.insert(block, fold_start_index, MORE_FOLD_START)
+      table.insert(block, #block, MORE_FOLD_END)
+    end
   end
 
   return block
@@ -77,6 +87,8 @@ local function build_thread_heading(thread)
 
   if thread.is_resolved then
     heading = heading .. " [RESOLVED]"
+  else
+    heading = heading .. " [NOT RESOLVED]"
   end
 
   return heading
@@ -119,6 +131,8 @@ function M.render(doc)
     end
 
     for _, thread in ipairs(review_threads) do
+      local last_comment = thread.comments[#thread.comments]
+      local should_fold_thread = thread.is_resolved or (last_comment and last_comment.author == doc.meta.current_user)
       local block = {
         build_thread_heading(thread),
       }
@@ -132,13 +146,15 @@ function M.render(doc)
           table.insert(block, "")
         end
 
-        vim.list_extend(block, build_comment_block(comment))
+        local is_last_comment = index == #thread.comments
+        vim.list_extend(block, build_comment_block(comment, {
+          long_fold = not (should_fold_thread and is_last_comment),
+        }))
       end
 
-      local last_comment = thread.comments[#thread.comments]
-      if thread.is_resolved or (last_comment and last_comment.author == doc.meta.current_user) then
-        block[1] = block[1] .. FOLD_START
-        block[#block] = block[#block] .. FOLD_END
+      if should_fold_thread then
+        block[1] = append_marker(block[1], FOLD_START)
+        block[#block] = append_marker(block[#block], FOLD_END)
       end
 
       add_block(lines, block)

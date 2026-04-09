@@ -5,14 +5,23 @@ local M = {}
 local validate_comment
 local validate_review_thread
 
+local function is_standalone_fold_marker(line)
+  if type(line) ~= "string" then
+    return false
+  end
+
+  return line:match("^%s*<!%-%-.-%{%{%{%s*%-%->$") ~= nil
+    or line:match("^%s*<!%-%-.-%}%}%}%s*%-%->$") ~= nil
+end
+
 local function strip_fold_markers(line)
   if type(line) ~= "string" then
     return line
   end
 
   local stripped = line
-  stripped = stripped:gsub("%s*<!%-%- %{%{%{ %-%->$", "")
-  stripped = stripped:gsub("%s*<!%-%- %}%}%} %-%->$", "")
+  stripped = stripped:gsub("%s*<!%-%-.-%{%{%{%s*%-%->$", "")
+  stripped = stripped:gsub("%s*<!%-%-.-%}%}%}%s*%-%->$", "")
   return stripped
 end
 
@@ -21,7 +30,7 @@ local function current_line(lines, index)
 end
 
 local function skip_blank_lines(lines, index)
-  while index <= #lines and current_line(lines, index) == "" do
+  while index <= #lines and (current_line(lines, index) == "" or is_standalone_fold_marker(lines[index])) do
     index = index + 1
   end
   return index
@@ -43,12 +52,15 @@ local function consume_fenced_body(lines, start_index, meta_lnum)
   index = index + 1
 
   while index <= #lines do
+    local raw_line = lines[index]
     local line = current_line(lines, index)
     if line == fence then
       return util.join_lines(body), index + 1, nil
     end
 
-    table.insert(body, line)
+    if not is_standalone_fold_marker(raw_line) then
+      table.insert(body, line)
+    end
     index = index + 1
   end
 
@@ -60,13 +72,16 @@ local function consume_plain_body(lines, start_index, is_boundary)
   local body = {}
 
   while index <= #lines do
+    local raw_line = lines[index]
     local line = current_line(lines, index)
     if line == "" then
       index = index + 1
     elseif is_boundary(line, index) then
       break
     else
-      table.insert(body, line)
+      if not is_standalone_fold_marker(raw_line) then
+        table.insert(body, line)
+      end
       index = index + 1
     end
   end
@@ -150,6 +165,8 @@ local function parse_review_thread_heading(line)
   if heading:match("%s+%[RESOLVED%]$") then
     resolved = true
     heading = heading:gsub("%s+%[RESOLVED%]$", "")
+  elseif heading:match("%s+%[NOT RESOLVED%]$") then
+    heading = heading:gsub("%s+%[NOT RESOLVED%]$", "")
   end
 
   local path, line_number, thread_id = heading:match("^### (.+):(%d+)%s+thread#([^%s]+)$")

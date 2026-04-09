@@ -26,6 +26,16 @@ local function thread_by_root_id(doc)
   return map
 end
 
+local function thread_by_id(doc)
+  local map = {}
+  for _, thread in ipairs(doc.review_threads or {}) do
+    if thread.id then
+      map[thread.id] = thread
+    end
+  end
+  return map
+end
+
 local function sync_existing_comment(repo, edited, original, opts)
   if edited.body == original.body then
     return "unchanged", nil
@@ -82,6 +92,34 @@ local function sync_item_body(edited_doc, original_doc, opts)
   return "updated", nil
 end
 
+local function sync_review_thread(edited, original, opts)
+  if edited.resolved == original.is_resolved then
+    return "unchanged", nil
+  end
+
+  if edited.resolved then
+    if not original.viewer_can_resolve then
+      return "non_editable", "not resolvable by the current user"
+    end
+
+    local _, err = gh.resolve_review_thread(original.id, opts)
+    if err then
+      return "error", err
+    end
+    return "updated", nil
+  end
+
+  if not original.viewer_can_unresolve then
+    return "non_editable", "not unresolvable by the current user"
+  end
+
+  local _, err = gh.unresolve_review_thread(original.id, opts)
+  if err then
+    return "error", err
+  end
+  return "updated", nil
+end
+
 local function sync_new_comment(repo, number, edited, opts)
   if edited.body == "" then
     return "unchanged", nil
@@ -131,11 +169,14 @@ end
 local function overlay_failed_edits(doc, failed_items)
   local by_existing_id = by_id(doc)
   local by_thread_root = thread_by_root_id(doc)
+  local by_thread_id = thread_by_id(doc)
 
   for _, failed in ipairs(failed_items) do
     local edited = failed.edited
     if failed.scope == "body" then
       doc.body = edited.body
+    elseif failed.scope == "review_thread" and edited.id and by_thread_id[edited.id] then
+      by_thread_id[edited.id].is_resolved = edited.resolved
     elseif edited.meta.id and by_existing_id[edited.meta.id] then
       by_existing_id[edited.meta.id].body = edited.body
     elseif edited.meta.kind == "new_issue_comment" then
@@ -145,8 +186,13 @@ local function overlay_failed_edits(doc, failed_items)
         body = edited.body,
       })
     elseif edited.meta.kind == "new_review_comment" then
+      local parsed_target = target.parse_blob_url(edited.meta.target)
       table.insert(doc.review_threads, {
+        id = nil,
         root_id = nil,
+        path = parsed_target and parsed_target.path or nil,
+        line = parsed_target and parsed_target.line or nil,
+        is_resolved = false,
         comments = {
           {
             kind = "pending_review_comment",
@@ -174,6 +220,7 @@ function M.apply(edited_doc, original_doc, opts)
   local repo = original_doc.meta.repo
   local number = original_doc.meta.number
   local original_by_id = by_id(original_doc)
+  local original_threads_by_id = thread_by_id(original_doc)
   opts = vim.tbl_extend("force", { number = number }, opts or {})
   local report = {
     updated = {},
@@ -194,6 +241,25 @@ function M.apply(edited_doc, original_doc, opts)
       scope = "body",
       edited = { body = edited_doc.body },
     })
+  end
+
+  for _, edited_thread in ipairs(edited_doc.review_threads or {}) do
+    if edited_thread.id then
+      local original_thread = original_threads_by_id[edited_thread.id]
+      if not original_thread then
+        return nil, string.format("review thread %s is unknown in the original document", edited_thread.id)
+      end
+
+      local status, err = sync_review_thread(edited_thread, original_thread, opts)
+      if status == "updated" then
+        table.insert(report.updated, { scope = "review_thread", id = edited_thread.id })
+      elseif status == "non_editable" then
+        table.insert(report.skipped, { scope = "review_thread", id = edited_thread.id, reason = err or "not editable by the current user" })
+      elseif status == "error" then
+        table.insert(report.errored, { scope = "review_thread", id = edited_thread.id, message = err })
+        table.insert(failed_items, { scope = "review_thread", edited = edited_thread })
+      end
+    end
   end
 
   for _, edited in ipairs(edited_doc.comments) do

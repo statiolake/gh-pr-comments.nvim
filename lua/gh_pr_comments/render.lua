@@ -67,6 +67,21 @@ local function build_comment_block(comment)
   return block
 end
 
+local function build_thread_heading(thread)
+  local location = string.format("%s:%s", thread.path or "unknown", tostring(thread.line or "?"))
+  local heading = string.format("### %s", location)
+
+  if thread.id then
+    heading = string.format("%s thread#%s", heading, thread.id)
+  end
+
+  if thread.is_resolved then
+    heading = heading .. " [RESOLVED]"
+  end
+
+  return heading
+end
+
 function M.render(doc)
   local lines = {
     string.format("# %s #%d: %s", doc.meta.kind == "pull_request" and "Pull Request" or "Issue", doc.meta.number, doc.meta.title),
@@ -104,10 +119,8 @@ function M.render(doc)
     end
 
     for _, thread in ipairs(review_threads) do
-      local first = thread.comments[1]
-      local location = string.format("%s:%s", first.path or "unknown", tostring(first.line or "?"))
       local block = {
-        string.format("### %s", location),
+        build_thread_heading(thread),
       }
 
       for index, comment in ipairs(thread.comments) do
@@ -123,7 +136,7 @@ function M.render(doc)
       end
 
       local last_comment = thread.comments[#thread.comments]
-      if last_comment and last_comment.author == doc.meta.current_user then
+      if thread.is_resolved or (last_comment and last_comment.author == doc.meta.current_user) then
         block[1] = block[1] .. FOLD_START
         block[#block] = block[#block] .. FOLD_END
       end

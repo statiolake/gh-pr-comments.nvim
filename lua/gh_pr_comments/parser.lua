@@ -3,6 +3,7 @@ local util = require("gh_pr_comments.util")
 local M = {}
 
 local validate_comment
+local validate_review_thread
 
 local function strip_fold_markers(line)
   if type(line) ~= "string" then
@@ -140,15 +141,35 @@ local function parse_review_thread_heading(line)
     return {
       mode = "url",
       value = url,
+      resolved = false,
     }
   end
 
-  local path, line_number = line:match("^### (.+):(%d+)$")
+  local resolved = false
+  local heading = line
+  if heading:match("%s+%[RESOLVED%]$") then
+    resolved = true
+    heading = heading:gsub("%s+%[RESOLVED%]$", "")
+  end
+
+  local path, line_number, thread_id = heading:match("^### (.+):(%d+)%s+thread#([^%s]+)$")
   if path and line_number then
     return {
       mode = "location",
       path = path,
       line = tonumber(line_number),
+      thread_id = thread_id,
+      resolved = resolved,
+    }
+  end
+
+  path, line_number = heading:match("^### (.+):(%d+)$")
+  if path and line_number then
+    return {
+      mode = "location",
+      path = path,
+      line = tonumber(line_number),
+      resolved = resolved,
     }
   end
 
@@ -250,6 +271,14 @@ local function parse_review_thread_block(lines, start_index)
     return nil, nil, string.format("line %d: expected review thread heading", start_index)
   end
 
+  local thread, thread_err = validate_review_thread({
+    id = thread_context.thread_id,
+    resolved = thread_context.resolved,
+  }, start_index)
+  if thread_err then
+    return nil, nil, thread_err
+  end
+
   local comments = {}
   local index = start_index + 1
   local thread_root_id
@@ -296,7 +325,8 @@ local function parse_review_thread_block(lines, start_index)
     return nil, nil, string.format("line %d: review thread has no comments", start_index)
   end
 
-  return comments, index, nil
+  thread.comments = comments
+  return thread, index, nil
 end
 
 validate_comment = function(meta, body, lnum)
@@ -335,12 +365,29 @@ validate_comment = function(meta, body, lnum)
   }, nil
 end
 
+validate_review_thread = function(meta, lnum)
+  if meta.id ~= nil and type(meta.id) ~= "string" then
+    return nil, string.format("line %d: existing review thread requires string id", lnum)
+  end
+
+  if meta.id == nil and meta.resolved then
+    return nil, string.format("line %d: new review thread cannot be marked resolved", lnum)
+  end
+
+  return {
+    id = meta.id,
+    resolved = meta.resolved == true,
+    comments = {},
+  }, nil
+end
+
 function M.parse(lines)
   if #lines == 0 then
     return nil, "buffer is empty"
   end
 
   local comments = {}
+  local review_threads = {}
   local body = ""
   local index = 1
   local section
@@ -394,11 +441,12 @@ function M.parse(lines)
     elseif section == "reviews" then
       local heading = parse_review_thread_heading(line)
       if heading then
-        local thread_comments, next_index, thread_err = parse_review_thread_block(lines, index)
+        local thread, next_index, thread_err = parse_review_thread_block(lines, index)
         if thread_err then
           return nil, thread_err
         end
-        vim.list_extend(comments, thread_comments)
+        table.insert(review_threads, thread)
+        vim.list_extend(comments, thread.comments)
         index = next_index
       else
         return nil, string.format("line %d: unexpected content in Reviews section: %s", index, line)
@@ -411,6 +459,7 @@ function M.parse(lines)
   return {
     body = body,
     comments = comments,
+    review_threads = review_threads,
   }, nil
 end
 

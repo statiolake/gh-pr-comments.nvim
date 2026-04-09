@@ -61,6 +61,7 @@ The rendered document uses this structure:
 - `## Comments`: top-level timeline comments
 - `## Reviews`: file/line review threads
 - Rendered review thread headings use `path:line` so they work well with `gf`.
+- Existing review thread headings also include `thread#...`; adding or removing `[RESOLVED]` on that heading toggles the thread state on save.
 - Fold markers are emitted as HTML comments, so the rendered buffer stays valid Markdown.
 
 Bodies may be written either as plain text or as fenced blocks. After a successful save, the buffer is re-rendered into the canonical fenced form.
@@ -91,7 +92,7 @@ New top-level comment
 
 ## Reviews
 
-### path/to/file.ts:10
+### path/to/file.ts:10 thread#PRRT_example [RESOLVED]
 
 @reviewer comment#456
 ```comment

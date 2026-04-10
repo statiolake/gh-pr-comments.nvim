@@ -128,6 +128,7 @@ local function normalize_review_thread(thread, repo, current_user)
     path = util.to_string_or_nil(thread.path) or first.path,
     line = util.to_number_or_nil(thread.line) or util.to_number_or_nil(thread.originalLine) or first.line or first.original_line,
     diff_side = util.to_string_or_nil(thread.diffSide) or first.side or "RIGHT",
+    is_outdated = thread.isOutdated == true,
     is_resolved = thread.isResolved == true,
     resolved_by = normalize_author(thread.resolvedBy),
     viewer_can_resolve = thread.viewerCanResolve == true,

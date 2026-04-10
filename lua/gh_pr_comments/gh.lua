@@ -71,6 +71,7 @@ query PullRequestBundle(
         }
         nodes {
           id
+          isOutdated
           isResolved
           viewerCanResolve
           viewerCanUnresolve

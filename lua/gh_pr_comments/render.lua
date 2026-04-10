@@ -91,6 +91,10 @@ local function build_thread_heading(thread)
     heading = heading .. " [NOT RESOLVED]"
   end
 
+  if thread.is_outdated then
+    heading = heading .. " [OUTDATED]"
+  end
+
   return heading
 end
 

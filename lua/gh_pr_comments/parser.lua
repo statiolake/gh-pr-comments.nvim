@@ -162,6 +162,9 @@ local function parse_review_thread_heading(line)
 
   local resolved = false
   local heading = line
+  if heading:match("%s+%[OUTDATED%]$") then
+    heading = heading:gsub("%s+%[OUTDATED%]$", "")
+  end
   if heading:match("%s+%[RESOLVED%]$") then
     resolved = true
     heading = heading:gsub("%s+%[RESOLVED%]$", "")
